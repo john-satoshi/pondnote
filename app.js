@@ -114,6 +114,7 @@ const sim = {
   authMode: "login",
   auth: {
     email: "",
+    userId: "",
     loggedIn: false,
   },
   natureArrivalPlan: {
@@ -201,9 +202,8 @@ const COLLISION_RESTITUTION = 0.4;
 const DEFAULT_NOTE_COLOR = "#F4F4F4";
 const MAX_CANVAS_PIXELS = 2_073_600; // ~1920x1080
 const ENABLE_GRAPHICS_WORKER = false;
-const USERS_STORAGE_KEY = "pondPrototypeUsers";
-const SESSION_EMAIL_KEY = "pondUserEmail";
-const USER_NOTES_STORAGE_KEY = "pondNotesByUser";
+const SUPABASE_URL = "https://husfhexynrqsvpzapmke.supabase.co";
+const SUPABASE_ANON_KEY = "sb_publishable_se4_3-htGRgwylrb3edafg_oPT13g1W"; // TODO: paste your Supabase "Publishable key" here before deploy
 const DEMO_NOTE_TEXTS = [
   "Hello, welcome to pond notes",
   "A peaceful and reflective experience",
@@ -213,6 +213,10 @@ const DEMO_NOTE_TEXTS = [
   "built with love and fun by John",
 ];
 const DEMO_NOTE_COLORS = ["#F4F4F4", "#F4F4F4", "#FFDB8D", "#FFDB8D", "#B1DCE8", "#A3D1A6"];
+const supabaseClient =
+  window.supabase && SUPABASE_ANON_KEY
+    ? window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY)
+    : null;
 sim.skyCtx = sim.skyCanvas.getContext("2d", { alpha: false });
 sim.reflectionGif.ctx = sim.reflectionGif.canvas.getContext("2d", { alpha: true });
 
@@ -351,55 +355,6 @@ function getTodayNoteLabel() {
   }).format(new Date());
 }
 
-function safeParseJson(text, fallback) {
-  try {
-    if (!text) return fallback;
-    return JSON.parse(text);
-  } catch (_err) {
-    return fallback;
-  }
-}
-
-function getStoredUsers() {
-  const raw = window.localStorage.getItem(USERS_STORAGE_KEY);
-  const parsed = safeParseJson(raw, {});
-  if (parsed && typeof parsed === "object") return parsed;
-  return {};
-}
-
-function setStoredUsers(users) {
-  window.localStorage.setItem(USERS_STORAGE_KEY, JSON.stringify(users));
-}
-
-function getStoredSessionEmail() {
-  return (
-    window.localStorage.getItem(SESSION_EMAIL_KEY) ||
-    window.sessionStorage.getItem(SESSION_EMAIL_KEY) ||
-    ""
-  );
-}
-
-function setStoredSessionEmail(email) {
-  window.localStorage.setItem(SESSION_EMAIL_KEY, email);
-  window.sessionStorage.setItem(SESSION_EMAIL_KEY, email);
-}
-
-function clearStoredSessionEmail() {
-  window.localStorage.removeItem(SESSION_EMAIL_KEY);
-  window.sessionStorage.removeItem(SESSION_EMAIL_KEY);
-}
-
-function getStoredNotesMap() {
-  const raw = window.localStorage.getItem(USER_NOTES_STORAGE_KEY);
-  const parsed = safeParseJson(raw, {});
-  if (parsed && typeof parsed === "object") return parsed;
-  return {};
-}
-
-function setStoredNotesMap(next) {
-  window.localStorage.setItem(USER_NOTES_STORAGE_KEY, JSON.stringify(next));
-}
-
 function serializeCurrentNotes() {
   return sim.floaters
     .filter((f) => f.kind === "note")
@@ -414,17 +369,36 @@ function serializeCurrentNotes() {
     }));
 }
 
-function persistUserNotes(email) {
-  if (!email) return;
-  const notesMap = getStoredNotesMap();
-  notesMap[email] = serializeCurrentNotes();
-  setStoredNotesMap(notesMap);
+async function persistUserNotes(userId) {
+  if (!supabaseClient || !userId) return;
+  const notes = serializeCurrentNotes().map((n) => ({
+    user_id: userId,
+    text: n.text,
+    note_color: n.noteColor,
+    x: n.x,
+    y: n.y,
+    angle: n.angle,
+    vx: n.vx,
+    vy: n.vy,
+  }));
+
+  const { error: deleteError } = await supabaseClient.from("notes").delete().eq("user_id", userId);
+  if (deleteError) {
+    setAccountStatus("Failed to save notes.");
+    return;
+  }
+
+  if (notes.length === 0) return;
+  const { error: insertError } = await supabaseClient.from("notes").insert(notes);
+  if (insertError) {
+    setAccountStatus("Failed to save notes.");
+  }
 }
 
 function hydrateNoteFromStored(item) {
   const note = randomFloater(50, {
     kind: "note",
-    noteColor: item.noteColor || DEFAULT_NOTE_COLOR,
+    noteColor: item.note_color || DEFAULT_NOTE_COLOR,
     text: item.text || "",
   });
   note.x = Number.isFinite(item.x) ? item.x : note.x;
@@ -455,9 +429,19 @@ function setLoggedOutDemoScene() {
   sim.natureArrivalPlan.enabled = false;
 }
 
-function setLoggedInScene(email) {
-  const notesMap = getStoredNotesMap();
-  const stored = Array.isArray(notesMap[email]) ? notesMap[email] : [];
+async function setLoggedInScene(userId) {
+  let stored = [];
+  if (supabaseClient && userId) {
+    const { data, error } = await supabaseClient
+      .from("notes")
+      .select("text, note_color, x, y, angle, vx, vy, created_at")
+      .eq("user_id", userId)
+      .order("created_at", { ascending: true });
+    if (!error && Array.isArray(data)) {
+      stored = data;
+    }
+  }
+
   const next = [];
   if (stored.length > 0) {
     for (const item of stored) {
@@ -2089,26 +2073,29 @@ function refreshAccountUi() {
   if (logout) logout.hidden = !sim.auth.loggedIn;
 }
 
-function performLogin(email) {
+function isSupabaseReady() {
+  return !!supabaseClient;
+}
+
+async function performLogin(user) {
+  if (!user) return;
   sim.auth.loggedIn = true;
-  sim.auth.email = email;
-  setStoredSessionEmail(email);
-  setLoggedInScene(email);
+  sim.auth.email = user.email || "";
+  sim.auth.userId = user.id || "";
+  await setLoggedInScene(sim.auth.userId);
   syncNoteCountControl();
   refreshAccountUi();
   updateCanvasCursor();
   setAccountStatus("Signed in.");
 }
 
-function performGuestMode({ clearSession = false } = {}) {
-  if (sim.auth.loggedIn && sim.auth.email) {
-    persistUserNotes(sim.auth.email);
+function performGuestMode() {
+  if (sim.auth.loggedIn && sim.auth.userId) {
+    persistUserNotes(sim.auth.userId);
   }
   sim.auth.loggedIn = false;
   sim.auth.email = "";
-  if (clearSession) {
-    clearStoredSessionEmail();
-  }
+  sim.auth.userId = "";
   initFloaters(settings.floaterCount, settings.natureCount);
   sim.noteEditMode = false;
   sim.hoveredNote = null;
@@ -2124,8 +2111,11 @@ function performGuestMode({ clearSession = false } = {}) {
   updateCanvasCursor();
 }
 
-function performLogout() {
-  performGuestMode({ clearSession: true });
+async function performLogout() {
+  if (isSupabaseReady()) {
+    await supabaseClient.auth.signOut();
+  }
+  performGuestMode();
 }
 
 function bindAuthModal() {
@@ -2199,8 +2189,12 @@ function bindAuthModal() {
 
   cancel.addEventListener("click", close);
 
-  submit.addEventListener("click", () => {
-    const users = getStoredUsers();
+  submit.addEventListener("click", async () => {
+    if (!isSupabaseReady()) {
+      setStatus("Supabase key missing in app.js. Add publishable key first.");
+      return;
+    }
+
     if (sim.authMode === "change-password") {
       if (!sim.auth.loggedIn || !sim.auth.email) {
         setStatus("Please log in first.");
@@ -2213,15 +2207,25 @@ function bindAuthModal() {
         return;
       }
       if (nextPassword.length < 4) {
-        setStatus("New password must be at least 4 characters.");
+        setStatus("New password must be at least 6 characters.");
         return;
       }
-      if (users[sim.auth.email] !== currentPassword) {
+
+      const { error: reauthError } = await supabaseClient.auth.signInWithPassword({
+        email: sim.auth.email,
+        password: currentPassword,
+      });
+      if (reauthError) {
         setStatus("Current password is incorrect.");
         return;
       }
-      users[sim.auth.email] = nextPassword;
-      setStoredUsers(users);
+
+      const { error: updateError } = await supabaseClient.auth.updateUser({ password: nextPassword });
+      if (updateError) {
+        setStatus(updateError.message || "Failed to update password.");
+        return;
+      }
+
       close();
       setAccountStatus("Password updated.");
       return;
@@ -2233,22 +2237,42 @@ function bindAuthModal() {
       setStatus("Enter a valid email address.");
       return;
     }
-    if (!password || password.length < 4) {
-      setStatus("Password must be at least 4 characters.");
+    if (!password || password.length < 6) {
+      setStatus("Password must be at least 6 characters.");
       return;
     }
 
-    const existing = users[email];
-    if (existing && existing !== password) {
-      setStatus("Incorrect password for this email.");
+    const { data: loginData, error: loginError } = await supabaseClient.auth.signInWithPassword({
+      email,
+      password,
+    });
+    if (!loginError && loginData?.user) {
+      close();
+      await performLogin(loginData.user);
       return;
     }
-    if (!existing) {
-      users[email] = password;
-      setStoredUsers(users);
+
+    const { data: signUpData, error: signUpError } = await supabaseClient.auth.signUp({
+      email,
+      password,
+    });
+    if (signUpError) {
+      if ((signUpError.message || "").toLowerCase().includes("already registered")) {
+        setStatus("Incorrect password for this email.");
+      } else {
+        setStatus(signUpError.message || "Sign up failed.");
+      }
+      return;
     }
+
     close();
-    performLogin(email);
+    if (signUpData?.session?.user) {
+      await performLogin(signUpData.session.user);
+      setAccountStatus("Account created and signed in.");
+      return;
+    }
+
+    setAccountStatus("Account created. Check your email, confirm, then log in.");
   });
 
   document.addEventListener("keydown", (event) => {
@@ -2261,14 +2285,20 @@ function bindAuthModal() {
   sim.openAuthModal = open;
 }
 
-function initializeAuthState() {
-  const users = getStoredUsers();
-  const sessionEmail = getStoredSessionEmail();
-  if (sessionEmail && users[sessionEmail]) {
-    performLogin(sessionEmail);
+async function initializeAuthState() {
+  if (!isSupabaseReady()) {
+    performGuestMode();
+    setAccountStatus("Guest mode active. Add Supabase publishable key in app.js to enable login.");
     return;
   }
-  performGuestMode({ clearSession: false });
+
+  const { data, error } = await supabaseClient.auth.getSession();
+  if (!error && data?.session?.user) {
+    await performLogin(data.session.user);
+    return;
+  }
+
+  performGuestMode();
   setAccountStatus("Guest mode: fully functional. Log in to retain notes across revisits.");
 }
 
@@ -2343,8 +2373,8 @@ function bindCreateButton() {
         sim.floaters.splice(idx, 1);
       }
       updateCountUI();
-      if (sim.auth.loggedIn && sim.auth.email) {
-        persistUserNotes(sim.auth.email);
+      if (sim.auth.loggedIn && sim.auth.userId) {
+        persistUserNotes(sim.auth.userId);
       }
     }
     input.value = "";
@@ -2356,8 +2386,8 @@ function bindCreateButton() {
       editingNote.text = input.value || "";
       editingNote.noteColor = selectedColor;
       invalidateShadowCache();
-      if (sim.auth.loggedIn && sim.auth.email) {
-        persistUserNotes(sim.auth.email);
+      if (sim.auth.loggedIn && sim.auth.userId) {
+        persistUserNotes(sim.auth.userId);
       }
       closeEditor();
       return;
@@ -2380,8 +2410,8 @@ function bindCreateButton() {
     note.vy = (Math.random() - 0.5) * 0.2;
     sim.floaters.push(note);
     updateCountUI();
-    if (sim.auth.loggedIn && sim.auth.email) {
-      persistUserNotes(sim.auth.email);
+    if (sim.auth.loggedIn && sim.auth.userId) {
+      persistUserNotes(sim.auth.userId);
     }
     input.value = "";
     closeEditor();
@@ -2645,8 +2675,8 @@ document.addEventListener("visibilitychange", () => {
   }
 });
 window.addEventListener("beforeunload", () => {
-  if (sim.auth.loggedIn && sim.auth.email) {
-    persistUserNotes(sim.auth.email);
+  if (sim.auth.loggedIn && sim.auth.userId) {
+    persistUserNotes(sim.auth.userId);
   }
   if (sim.graphicsWorker.worker) {
     sim.graphicsWorker.worker.terminate();
