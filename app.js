@@ -213,6 +213,12 @@ const DEMO_NOTE_TEXTS = [
   "built with love and fun by John",
 ];
 const DEMO_NOTE_COLORS = ["#F4F4F4", "#F4F4F4", "#FFDB8D", "#FFDB8D", "#B1DCE8", "#A3D1A6"];
+const DEFAULT_ASSETS = {
+  reflection: "./assets/reflection-default.gif",
+  floor: "./assets/pond-floor-default.png",
+  leaf: "./assets/leaf-default.png",
+  flower: "./assets/flower-default.png",
+};
 const supabaseClient =
   window.supabase && SUPABASE_ANON_KEY
     ? window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY)
@@ -2646,6 +2652,143 @@ function bindSpritePickers() {
   }
 }
 
+function getFileNameFromPath(path) {
+  if (!path) return "asset";
+  const parts = path.split("/");
+  return parts[parts.length - 1] || "asset";
+}
+
+async function loadBundledReflection() {
+  const runtimeImg = document.getElementById("reflection-runtime");
+  if (!runtimeImg) return;
+
+  const path = DEFAULT_ASSETS.reflection;
+  setReflectionStatus(`Loading default: ${getFileNameFromPath(path)}`);
+  clearGifPlayback();
+  if (sim.reflectionObjectUrl) {
+    URL.revokeObjectURL(sim.reflectionObjectUrl);
+    sim.reflectionObjectUrl = null;
+  }
+
+  try {
+    const res = await fetch(path, { cache: "force-cache" });
+    if (!res.ok) throw new Error("reflection fetch failed");
+    const blob = await res.blob();
+    const fileName = getFileNameFromPath(path);
+    const fileType = blob.type || (fileName.toLowerCase().endsWith(".gif") ? "image/gif" : "");
+    const file = new File([blob], fileName, { type: fileType });
+
+    const isGif = fileName.toLowerCase().endsWith(".gif") || fileType.toLowerCase() === "image/gif";
+    if (isGif) {
+      const ok = await loadGifPlayback(file);
+      if (ok) {
+        sim.reflectionImage = null;
+        runtimeImg.removeAttribute("src");
+        applyReflectionTexture();
+        const avg = sim.reflectionGif.frames.length
+          ? (sim.reflectionGif.totalDuration / sim.reflectionGif.frames.length).toFixed(1)
+          : "0";
+        setReflectionStatus(
+          `Reflection (default GIF): ${fileName} | frames=${sim.reflectionGif.frames.length} | avg=${avg}ms`
+        );
+        return;
+      }
+    }
+
+    const objectUrl = URL.createObjectURL(blob);
+    sim.reflectionObjectUrl = objectUrl;
+    await new Promise((resolve, reject) => {
+      runtimeImg.onload = resolve;
+      runtimeImg.onerror = reject;
+      runtimeImg.src = objectUrl;
+    });
+    sim.reflectionImage = runtimeImg;
+    applyReflectionTexture();
+    setReflectionStatus(`Reflection (default image): ${fileName}`);
+  } catch (_err) {
+    if (sim.reflectionObjectUrl) {
+      URL.revokeObjectURL(sim.reflectionObjectUrl);
+      sim.reflectionObjectUrl = null;
+    }
+    sim.reflectionImage = null;
+    applyReflectionTexture();
+    setReflectionStatus("Default reflection not found. Using generated sky.");
+  }
+}
+
+async function loadBundledFloor() {
+  const path = DEFAULT_ASSETS.floor;
+  setBottomStatus(`Loading default: ${getFileNameFromPath(path)}`);
+  if (sim.bottomImage && sim.bottomImage.parentNode) {
+    sim.bottomImage.parentNode.removeChild(sim.bottomImage);
+  }
+  if (sim.bottomObjectUrl) {
+    URL.revokeObjectURL(sim.bottomObjectUrl);
+    sim.bottomObjectUrl = null;
+  }
+
+  let pendingImg = null;
+  try {
+    const img = new Image();
+    pendingImg = img;
+    img.alt = "";
+    img.setAttribute("aria-hidden", "true");
+    img.style.position = "fixed";
+    img.style.width = "1px";
+    img.style.height = "1px";
+    img.style.left = "-9999px";
+    img.style.top = "-9999px";
+    img.style.opacity = "0";
+    img.style.pointerEvents = "none";
+    document.body.appendChild(img);
+    await new Promise((resolve, reject) => {
+      img.onload = resolve;
+      img.onerror = reject;
+      img.src = path;
+    });
+    sim.bottomImage = img;
+    setBottomStatus(`Pond floor (default): ${getFileNameFromPath(path)}`);
+  } catch (_err) {
+    if (pendingImg && pendingImg.parentNode) {
+      pendingImg.parentNode.removeChild(pendingImg);
+    }
+    if (sim.bottomImage && sim.bottomImage.parentNode) {
+      sim.bottomImage.parentNode.removeChild(sim.bottomImage);
+    }
+    sim.bottomImage = null;
+    setBottomStatus("Default pond floor not found.");
+  }
+}
+
+async function loadBundledSprite(kind) {
+  const path = DEFAULT_ASSETS[kind];
+  if (!path) return;
+  setSpriteStatus(kind, `Loading default: ${getFileNameFromPath(path)}`);
+  if (sim.itemSpriteObjectUrls[kind]) {
+    URL.revokeObjectURL(sim.itemSpriteObjectUrls[kind]);
+    sim.itemSpriteObjectUrls[kind] = null;
+  }
+
+  try {
+    const img = new Image();
+    await new Promise((resolve, reject) => {
+      img.onload = resolve;
+      img.onerror = reject;
+      img.src = path;
+    });
+    sim.itemSprites[kind] = img;
+    invalidateShadowCache();
+    setSpriteStatus(kind, `${kind[0].toUpperCase() + kind.slice(1)} sprite (default): ${getFileNameFromPath(path)}`);
+  } catch (_err) {
+    sim.itemSprites[kind] = null;
+    setSpriteStatus(kind, `Default ${kind} sprite not found.`);
+  }
+}
+
+async function loadBundledAssets() {
+  await Promise.all([loadBundledReflection(), loadBundledFloor(), loadBundledSprite("leaf"), loadBundledSprite("flower")]);
+}
+
 canvas.addEventListener("pointermove", onPointerMove);
 canvas.addEventListener("pointerdown", (event) => {
   if (sim.noteEditMode) {
@@ -2697,4 +2840,5 @@ initializeAuthState();
 bindReflectionPicker();
 bindBottomPicker();
 bindSpritePickers();
+loadBundledAssets();
 resumeSimulation();
