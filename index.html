@@ -1,0 +1,194 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Water Float Experiment</title>
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body>
+    <img id="reflection-runtime" class="reflection-runtime" alt="" aria-hidden="true" />
+    <canvas id="water-canvas" aria-label="Water floating simulation"></canvas>
+    <div class="top-actions" aria-label="Primary actions">
+      <button id="create-button" class="action-button create-button" type="button">Create</button>
+      <button id="note-edit-button" class="action-button note-edit-button" type="button" aria-pressed="false">Notes</button>
+      <button id="settings-button" class="action-button settings-button" type="button" aria-expanded="false" aria-controls="controls-panel">
+        <span class="settings-label">Settings</span>
+        <span class="settings-icon" aria-hidden="true">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
+            <path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="m6 9l6 6l6-6"></path>
+          </svg>
+        </span>
+      </button>
+    </div>
+    <div id="note-editor" class="note-editor is-hidden" aria-hidden="true">
+      <div class="note-editor-sheet">
+        <textarea id="note-editor-input" class="note-editor-input" placeholder="Writing the notes"></textarea>
+      </div>
+      <div class="note-editor-actions">
+        <button id="note-discard-button" class="action-button note-editor-button note-discard-button" type="button">Discard</button>
+        <div class="note-color-picker" aria-label="Note color">
+          <button class="note-color-swatch is-active" type="button" data-note-color="#F4F4F4" aria-label="White"></button>
+          <button class="note-color-swatch" type="button" data-note-color="#FFDB8D" aria-label="Yellow"></button>
+          <button class="note-color-swatch" type="button" data-note-color="#B1DCE8" aria-label="Blue"></button>
+          <button class="note-color-swatch" type="button" data-note-color="#A3D1A6" aria-label="Green"></button>
+        </div>
+        <button id="note-confirm-button" class="action-button note-editor-button note-confirm-button" type="button">Confirm</button>
+      </div>
+    </div>
+    <div id="auth-modal" class="auth-modal is-hidden" aria-hidden="true">
+      <div class="auth-card">
+        <h3 id="auth-title" class="auth-title">Log In</h3>
+        <p id="auth-subtitle" class="auth-subtitle">Use email + password. New email creates a local prototype account.</p>
+        <label id="auth-email-row" class="auth-field">
+          <span>Email</span>
+          <input id="auth-email-input" type="email" autocomplete="email" placeholder="you@example.com" />
+        </label>
+        <label id="auth-password-row" class="auth-field">
+          <span>Password</span>
+          <input id="auth-password-input" type="password" autocomplete="current-password" placeholder="••••••••" />
+        </label>
+        <label id="auth-new-password-row" class="auth-field is-hidden">
+          <span>New Password</span>
+          <input id="auth-new-password-input" type="password" autocomplete="new-password" placeholder="At least 4 chars" />
+        </label>
+        <p id="auth-status" class="reflection-status"> </p>
+        <div class="auth-actions">
+          <button id="auth-cancel-button" class="action-button" type="button">Cancel</button>
+          <button id="auth-submit-button" class="action-button" type="button">Continue</button>
+        </div>
+      </div>
+    </div>
+    <aside id="controls-panel" class="controls is-collapsed" aria-label="Simulation controls">
+      <div id="settings-root-view" class="settings-view is-active" aria-label="Settings root">
+        <div class="settings-root-scroll">
+          <section class="settings-section">
+            <h3 class="settings-section-title">Account</h3>
+            <p class="settings-section-copy">Mode: Local prototype</p>
+            <p id="account-email" class="settings-section-copy">Email: not signed in</p>
+            <button id="account-login" class="reflection-button" type="button">Log In</button>
+            <button id="account-update-password" class="reflection-button" type="button">Update Password</button>
+            <button id="account-logout" class="reflection-button secondary" type="button">Log Out</button>
+          </section>
+
+          <button id="open-pond-settings" class="settings-nav-button" type="button">
+            <span>Pond Settings</span>
+            <span aria-hidden="true">›</span>
+          </button>
+
+          <p id="account-status" class="reflection-status">Account actions are local placeholders for now.</p>
+        </div>
+      </div>
+
+      <div id="pond-settings-view" class="settings-view" aria-label="Pond settings">
+        <div class="settings-sub-header">
+          <button id="back-to-settings-root" class="settings-back-button" type="button" aria-label="Back to settings root">‹</button>
+          <span class="settings-sub-title">Pond Settings</span>
+        </div>
+
+        <div id="controls-content" class="controls-content">
+          <label class="control-row" for="floater-count">
+            <span>Post-it Count</span>
+            <span id="floater-count-value">1</span>
+          </label>
+          <input id="floater-count" type="range" min="1" max="30" step="1" value="1" />
+
+          <label class="control-row" for="nature-count">
+            <span>Nature Count</span>
+            <span id="nature-count-value">3</span>
+          </label>
+          <input id="nature-count" type="range" min="0" max="20" step="1" value="3" />
+
+          <label class="control-row" for="nature-spawn-margin">
+            <span>Spawn Margin</span>
+            <span id="nature-spawn-margin-value">110</span>
+          </label>
+          <input id="nature-spawn-margin" type="range" min="40" max="220" step="5" value="110" />
+
+          <label class="control-row" for="note-size">
+            <span>Post-it Size</span>
+            <span id="note-size-value">1.80</span>
+          </label>
+          <input id="note-size" type="range" min="0.6" max="1.8" step="0.01" value="1.80" />
+
+          <label class="control-row" for="note-noise">
+            <span>Note Noise</span>
+            <span id="note-noise-value">0.40</span>
+          </label>
+          <input id="note-noise" type="range" min="0" max="0.4" step="0.01" value="0.40" />
+
+          <label class="control-row" for="ripple-strength">
+            <span>Ripple Strength</span>
+            <span id="ripple-strength-value">1.20</span>
+          </label>
+          <input id="ripple-strength" type="range" min="0.2" max="2.2" step="0.05" value="1.20" />
+
+          <label class="control-row" for="cursor-push">
+            <span>Cursor Push</span>
+            <span id="cursor-push-value">0.30</span>
+          </label>
+          <input id="cursor-push" type="range" min="0.2" max="2.4" step="0.05" value="0.3" />
+
+          <label class="control-row" for="water-drag">
+            <span>Water Drag</span>
+            <span id="water-drag-value">0.984</span>
+          </label>
+          <input id="water-drag" type="range" min="0.960" max="0.999" step="0.001" value="0.984" />
+
+          <label class="control-row" for="refraction-intensity">
+            <span>Refraction</span>
+            <span id="refraction-intensity-value">6.0</span>
+          </label>
+          <input id="refraction-intensity" type="range" min="0" max="14" step="0.1" value="6.0" />
+
+          <label class="control-row" for="ripple-travel">
+            <span>Ripple Speed</span>
+            <span id="ripple-travel-value">0.55</span>
+          </label>
+          <input id="ripple-travel" type="range" min="0.25" max="1.25" step="0.01" value="0.55" />
+
+          <label class="control-row" for="ripple-pixel-size">
+            <span>Ripple Pixel Size</span>
+            <span id="ripple-pixel-size-value">8</span>
+          </label>
+          <input id="ripple-pixel-size" type="range" min="8" max="24" step="1" value="8" />
+
+          <div class="reflection-actions">
+            <button id="reflection-upload-btn" class="reflection-button" type="button">Load Reflection Image/GIF</button>
+            <button id="reflection-reset-btn" class="reflection-button secondary" type="button">Use Generated Sky</button>
+            <input id="reflection-file" type="file" accept="image/*,.gif" hidden />
+            <p id="reflection-status" class="reflection-status">Reflection: Generated sky</p>
+          </div>
+
+          <label class="control-row" for="bottom-opacity">
+            <span>Floor Opacity</span>
+            <span id="bottom-opacity-value">0.70</span>
+          </label>
+          <input id="bottom-opacity" type="range" min="0" max="1" step="0.01" value="0.70" />
+
+          <div class="reflection-actions">
+            <button id="bottom-upload-btn" class="reflection-button" type="button">Load Pond Floor Image</button>
+            <button id="bottom-reset-btn" class="reflection-button secondary" type="button">Disable Pond Floor</button>
+            <input id="bottom-file" type="file" accept="image/*" hidden />
+            <p id="bottom-status" class="reflection-status">Pond floor: Off</p>
+          </div>
+
+          <div class="reflection-actions">
+            <button id="leaf-sprite-upload-btn" class="reflection-button" type="button">Load Leaf PNG</button>
+            <button id="leaf-sprite-reset-btn" class="reflection-button secondary" type="button">Use Generated Leaf</button>
+            <input id="leaf-sprite-file" type="file" accept="image/png,image/webp,image/*" hidden />
+            <p id="leaf-sprite-status" class="reflection-status">Leaf sprite: Generated</p>
+          </div>
+
+          <div class="reflection-actions">
+            <button id="flower-sprite-upload-btn" class="reflection-button" type="button">Load Flower PNG</button>
+            <button id="flower-sprite-reset-btn" class="reflection-button secondary" type="button">Use Generated Flower</button>
+            <input id="flower-sprite-file" type="file" accept="image/png,image/webp,image/*" hidden />
+            <p id="flower-sprite-status" class="reflection-status">Flower sprite: Generated</p>
+          </div>
+        </div>
+      </div>
+    </aside>
+    <script src="app.js"></script>
+  </body>
+</html>
